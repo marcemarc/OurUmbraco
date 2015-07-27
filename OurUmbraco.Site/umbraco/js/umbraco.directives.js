@@ -651,6 +651,9 @@ angular.module("umbraco.directives")
                                               r.inline = "span";
                                               r.classes = rule.selector.substring(1);
                                           }else if (rule.selector[0] === "#") {
+                                              //Even though this will render in the style drop down, it will not actually be applied
+                                              // to the elements, don't think TinyMCE even supports this and it doesn't really make much sense
+                                              // since only one element can have one id.
                                               r.inline = "span";
                                               r.attributes = { id: rule.selector.substring(1) };
                                           }else {
@@ -818,7 +821,7 @@ angular.module("umbraco.directives")
                                 });
 
                                 editor.on('ObjectResized', function (e) {
-                                    var qs = "?width=" + e.width + "px&height=" + e.height + "px";
+                                    var qs = "?width=" + e.width + "&height=" + e.height;
                                     var srcAttr = $(e.target).attr("src");
                                     var path = srcAttr.split("?")[0];
                                     $(e.target).attr("data-mce-src", path + qs);
@@ -1963,6 +1966,107 @@ function umbImageUploadProgress($rootScope, assetsService, $timeout, $log, umbRe
 angular.module("umbraco.directives").directive('umbImageUploadProgress', umbImageUploadProgress);
 /**
 * @ngdoc directive
+* @name umbraco.directives.directive:navResize
+* @restrict A
+ * 
+ * @description
+ * Handles how the navigation responds to window resizing and controls how the draggable resize panel works
+**/
+angular.module("umbraco.directives")
+    .directive('navResize', function (appState, eventsService) {
+        return {
+            restrict: 'A',
+            link: function (scope, element, attrs, ctrl) {
+
+                var minScreenSize = 1100;
+                var resizeEnabled = false;
+
+                function setTreeMode() {
+                    appState.setGlobalState("showNavigation", appState.getGlobalState("isTablet") === false);
+                }
+
+                function enableResize() {
+                    //only enable when the size is correct and it's not already enabled
+                    if (!resizeEnabled && appState.getGlobalState("isTablet") === false) {
+                        element.find(".navigation-inner-container").resizable(
+                        {
+                            containment: $("#mainwrapper"),
+                            autoHide: true,
+                            handles: 'e',
+                            resize: function(e, ui) {
+                                var wrapper = $("#mainwrapper");
+                                var contentPanel = $("#leftcolumn").next();
+                                var apps = $("#applications");
+                                var navOffeset = ui.element.next();
+                                var leftPanelWidth = ui.element.width() + apps.width();
+
+                                contentPanel.css({ left: leftPanelWidth });
+                                navOffeset.css({ "margin-left": ui.element.outerWidth() });
+                            },
+                            stop: function(e, ui) {
+                            }
+                        });
+
+                        resizeEnabled = true;
+                    }
+                }
+
+                function resetResize() {
+                    if (resizeEnabled) {
+                        var navInnerContainer = element.find(".navigation-inner-container");
+
+                        //kill the resize
+                        navInnerContainer.resizable("destroy");
+
+                        navInnerContainer.css("width", "");
+                        $("#leftcolumn").next().css("left", "");
+                        navInnerContainer.next().css("margin-left", "");
+
+                        resizeEnabled = false;
+                    }
+                }
+
+                var evts = [];
+
+                //Listen for global state changes
+                evts.push(eventsService.on("appState.globalState.changed", function (e, args) {
+                    if (args.key === "showNavigation") {
+                        if (args.value === false) {
+                            resetResize();
+                        }
+                        else {
+                            enableResize();
+                        }
+                    }
+                }));
+
+                $(window).bind("resize", function () {
+
+                    //set the global app state
+                    appState.setGlobalState("isTablet", ($(window).width() <= minScreenSize));
+
+                    setTreeMode();
+                });
+
+                //ensure to unregister from all events and kill jquery plugins
+                scope.$on('$destroy', function () {
+                    for (var e in evts) {
+                        eventsService.unsubscribe(evts[e]);                        
+                    }
+                    var navInnerContainer = element.find(".navigation-inner-container");
+                    navInnerContainer.resizable("destroy");
+                });
+
+
+                //init
+                //set the global app state
+                appState.setGlobalState("isTablet", ($(window).width() <= minScreenSize));
+                setTreeMode();
+            }
+        };
+    });
+/**
+* @ngdoc directive
 * @name umbraco.directives.directive:umbItemSorter
 * @function
 * @element ANY
@@ -2154,7 +2258,7 @@ angular.module('umbraco.directives').directive("umbLogin", loginDirective);
 * @name umbraco.directives.directive:umbNavigation
 * @restrict E
 **/
-function leftColumnDirective() {
+function umbNavigationDirective() {
     return {
         restrict: "E",    // restrict to an element
         replace: true,   // replace the html element with the template
@@ -2162,17 +2266,27 @@ function leftColumnDirective() {
     };
 }
 
-angular.module('umbraco.directives').directive("umbNavigation", leftColumnDirective);
-
+angular.module('umbraco.directives').directive("umbNavigation", umbNavigationDirective);
 /**
  * @ngdoc directive
  * @name umbraco.directives.directive:umbNotifications
  */
-function notificationDirective() {
+function notificationDirective(notificationsService) {
     return {
         restrict: "E",    // restrict to an element
         replace: true,   // replace the html element with the template
-        templateUrl: 'views/directives/umb-notifications.html'
+        templateUrl: 'views/directives/umb-notifications.html',
+        link: function (scope, element, attr, ctrl) {
+
+            //subscribes to notifications in the notification service
+            scope.notifications = notificationsService.current;
+            scope.$watch('notificationsService.current', function (newVal, oldVal, scope) {
+                if (newVal) {
+                    scope.notifications = newVal;
+                }
+            });
+
+        }
     };
 }
 
@@ -2590,8 +2704,8 @@ function umbTreeDirective($compile, $log, $q, $rootScope, treeService, notificat
                     function doLoad(tree) {
                         var childrenAndSelf = [tree].concat(tree.children);
                         scope.activeTree = _.find(childrenAndSelf, function (node) {
-                            if(node && node.metaData){
-                                return node.metaData.treeAlias === treeAlias;
+                            if(node && node.metaData && node.metaData.treeAlias) {
+                                return node.metaData.treeAlias.toUpperCase() === treeAlias.toUpperCase();
                             }
                             return false;
                         });

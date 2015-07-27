@@ -6,6 +6,7 @@ using OurUmbraco.Documentation.Busineslogic;
 using OurUmbraco.Documentation.Busineslogic.GithubSourcePull;
 using OurUmbraco.Our.Examine;
 using Umbraco.Core;
+using Umbraco.Core.Services;
 using Umbraco.Web;
 
 namespace OurUmbraco.Our.CustomHandlers
