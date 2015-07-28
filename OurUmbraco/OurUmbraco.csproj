@@ -602,6 +602,7 @@
       <DependentUpon>repository.asmx</DependentUpon>
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="Repository\Api\SearchController.cs" />
     <Compile Include="Version\Config.cs" />
     <Compile Include="Version\uWikiFileVerison.cs" />
     <Compile Include="Wiki\Api\WikiController.cs" />
